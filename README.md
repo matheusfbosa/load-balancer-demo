@@ -19,7 +19,7 @@ This will start the backend server on port `8081`.
 
 ```sh
 $ make build
-$ ./bin/lb -port=80 -backends=8081,8082
+$ ./bin/lb -port=80 -backends=localhost:8081,localhost:8082
 ```
 
 This will start the Load Balancer on port `80`, distributing traffic between the backends on ports `8081` and `8082`.

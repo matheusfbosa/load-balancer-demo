@@ -5,29 +5,29 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
 )
 
 var (
-	serverPort   string
-	backendPorts string
+	serverPort         string
+	backendAuthorities string
+	roundRobinIdx      int
 )
 
 func main() {
 	flag.StringVar(&serverPort, "port", "8080", "server port")
-	flag.StringVar(&backendPorts, "backends", "8081,8082", "comma-separated list of backend ports")
+	flag.StringVar(&backendAuthorities, "backends", "localhost:8081,localhost:8082", "comma-separated list of backend authorities")
 	flag.Parse()
 
-	ports := parseBackendPorts(backendPorts)
-	if len(ports) == 0 {
-		log.Fatal("No backend ports provided")
+	backends := parseAuthorities(backendAuthorities)
+	if len(backends) == 0 {
+		log.Fatal("No backends provided")
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		serve(w, r, ports)
+		serve(w, r, backends)
 	})
 
 	log.Printf("Starting server on port :%s\n", serverPort)
@@ -36,37 +36,30 @@ func main() {
 	}
 }
 
-func parseBackendPorts(backendPorts string) []int {
-	var ports []int
-	for _, portStr := range splitPorts(backendPorts) {
-		var port int
-		_, err := fmt.Sscanf(portStr, "%d", &port)
-		if err == nil {
-			ports = append(ports, port)
-		}
+func parseAuthorities(backendAuthorities string) []string {
+	var backends []string
+	for _, backend := range strings.Split(backendAuthorities, ",") {
+		backends = append(backends, backend)
 	}
-	return ports
+
+	return backends
 }
 
-func splitPorts(backendPorts string) []string {
-	return strings.Split(backendPorts, ",")
-}
-
-func serve(w http.ResponseWriter, r *http.Request, backendPorts []int) {
+func serve(w http.ResponseWriter, r *http.Request, backends []string) {
 	logRequest(r)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	backendPort := loadBalance(backendPorts)
-	go func(port int) {
+	backend := loadBalance(backends)
+	go func(be string) {
 		defer wg.Done()
-		err := handleRequest(w, port)
+		err := handleRequest(w, be)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			log.Printf("Error handling request: %s\n", err)
 		}
-	}(backendPort)
+	}(backend)
 
 	wg.Wait()
 }
@@ -82,12 +75,19 @@ func logRequest(r *http.Request) {
 	}
 }
 
-func loadBalance(backendPorts []int) int {
-	return backendPorts[rand.Intn(len(backendPorts))]
+func loadBalance(backends []string) string {
+	if roundRobinIdx >= len(backends) {
+		roundRobinIdx = 0
+	}
+
+	backend := backends[roundRobinIdx]
+	roundRobinIdx++
+
+	return backend
 }
 
-func handleRequest(w http.ResponseWriter, backendPort int) error {
-	resBody, err := doRequest(backendPort)
+func handleRequest(w http.ResponseWriter, hostname string) error {
+	resBody, err := doRequest(hostname)
 	if err != nil {
 		return fmt.Errorf("Error making http request: %s", err)
 	}
@@ -99,9 +99,8 @@ func handleRequest(w http.ResponseWriter, backendPort int) error {
 	return nil
 }
 
-func doRequest(backendPort int) ([]byte, error) {
-	reqURL := fmt.Sprintf("http://localhost:%d", backendPort)
-	res, err := http.Get(reqURL)
+func doRequest(backend string) ([]byte, error) {
+	res, err := http.Get("http://" + backend)
 	if err != nil {
 		return nil, err
 	}
