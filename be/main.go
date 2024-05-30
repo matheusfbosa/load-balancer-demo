@@ -14,19 +14,21 @@ func main() {
 	flag.StringVar(&serverPort, "port", "8080", "server port")
 	flag.Parse()
 
-	http.HandleFunc("/", serve)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK"))
+	})
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		logRequest(r)
+		resBody := "Hello from backend server"
+		log.Printf("Response: %s\n", resBody)
+		w.Write([]byte(resBody))
+	})
 
 	log.Printf("Starting server on port :%s\n", serverPort)
 	if err := http.ListenAndServe(":"+serverPort, nil); err != nil {
 		log.Fatalf("Error starting server: %s\n", err)
 	}
-}
-
-func serve(w http.ResponseWriter, r *http.Request) {
-	logRequest(r)
-	resBody := "Hello from backend server"
-	log.Printf("Response: %s\n", resBody)
-	w.Write([]byte(resBody))
 }
 
 func logRequest(r *http.Request) {
